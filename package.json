@@ -1,0 +1,45 @@
+{
+  "name": "defi-asset-management",
+  "version": "1.0.0",
+  "description": "Decentralized Asset Management Platform for Multi-Chain DeFi",
+  "main": "index.js",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "keywords": [
+    "defi",
+    "asset-management",
+    "blockchain",
+    "ethereum",
+    "yield-farming",
+    "dao"
+  ],
+  "author": "DeFi Asset Management Team",
+  "license": "MIT",
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.8.0",
+    "@chainlink/contracts": "^0.5.0",
+    "ethers": "^5.7.2",
+    "web3": "^1.8.0",
+    "next": "^13.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^4.9.0",
+    "@types/react": "^18.0.0",
+    "@types/node": "^18.0.0"
+  },
+  "devDependencies": {
+    "hardhat": "^2.12.0",
+    "@nomiclabs/hardhat-ethers": "^2.2.0",
+    "@nomiclabs/hardhat-waffle": "^2.0.0",
+    "chai": "^4.3.0",
+    "ethereum-waffle": "^3.4.0",
+    "eslint": "^8.0.0",
+    "eslint-config-next": "^13.0.0"
+  }
+}
