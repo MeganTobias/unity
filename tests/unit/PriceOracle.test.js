@@ -5,20 +5,20 @@ describe("PriceOracle", function () {
     let priceOracle;
     let mockPriceFeed;
     let owner;
-    let addr1;
+    let user;
 
     beforeEach(async function () {
-        [owner, addr1] = await ethers.getSigners();
+        [owner, user] = await ethers.getSigners();
+        
+        // Deploy MockPriceFeed
+        const MockPriceFeed = await ethers.getContractFactory("MockPriceFeed");
+        mockPriceFeed = await MockPriceFeed.deploy();
+        await mockPriceFeed.deployed();
         
         // Deploy PriceOracle
         const PriceOracle = await ethers.getContractFactory("PriceOracle");
         priceOracle = await PriceOracle.deploy();
         await priceOracle.deployed();
-        
-        // Deploy mock price feed
-        const MockPriceFeed = await ethers.getContractFactory("MockPriceFeed");
-        mockPriceFeed = await MockPriceFeed.deploy();
-        await mockPriceFeed.deployed();
     });
 
     describe("Deployment", function () {
@@ -26,222 +26,315 @@ describe("PriceOracle", function () {
             expect(await priceOracle.owner()).to.equal(owner.address);
         });
 
-        it("Should authorize owner as oracle", async function () {
-            expect(await priceOracle.authorizedOracles(owner.address)).to.be.true;
+        it("Should initialize with zero price feeds", async function () {
+            expect(await priceOracle.priceFeedCount()).to.equal(0);
+        });
+
+        it("Should initialize with default price feed timeout", async function () {
+            expect(await priceOracle.priceFeedTimeout()).to.equal(3600); // 1 hour
         });
     });
 
-    describe("Token Management", function () {
-        it("Should allow owner to add tokens", async function () {
-            const tokenAddress = ethers.Wallet.createRandom().address;
-            const priceFeedAddress = mockPriceFeed.address;
-            const decimals = 18;
+    describe("Price Feed Management", function () {
+        it("Should allow owner to add price feeds", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            const priceFeed = mockPriceFeed.address;
+            const decimals = 8;
+            const description = "ETH/USD";
             
-            const tx = await priceOracle.addToken(tokenAddress, priceFeedAddress, decimals);
+            const tx = await priceOracle.addPriceFeed(token, priceFeed, decimals, description);
             const receipt = await tx.wait();
-            const event = receipt.events.find(e => e.event === 'TokenAdded');
+            const event = receipt.events.find(e => e.event === 'PriceFeedAdded');
             
-            expect(event.args.token).to.equal(tokenAddress);
-            expect(event.args.priceFeed).to.equal(priceFeedAddress);
+            expect(event.args.token).to.equal(token);
+            expect(event.args.priceFeed).to.equal(priceFeed);
             expect(event.args.decimals).to.equal(decimals);
             
-            const tokenInfo = await priceOracle.tokenInfo(tokenAddress);
-            expect(tokenInfo.token).to.equal(tokenAddress);
-            expect(tokenInfo.priceFeed).to.equal(priceFeedAddress);
-            expect(tokenInfo.decimals).to.equal(decimals);
-            expect(tokenInfo.isActive).to.be.true;
+            const feedInfo = await priceOracle.priceFeeds(token);
+            expect(feedInfo.priceFeed).to.equal(priceFeed);
+            expect(feedInfo.decimals).to.equal(decimals);
+            expect(feedInfo.isActive).to.be.true;
+            
+            expect(await priceOracle.priceFeedCount()).to.equal(1);
         });
 
-        it("Should not allow adding token with zero address", async function () {
+        it("Should not allow adding price feed for zero address token", async function () {
             await expect(
-                priceOracle.addToken(ethers.constants.AddressZero, mockPriceFeed.address, 18)
+                priceOracle.addPriceFeed(
+                    ethers.constants.AddressZero,
+                    mockPriceFeed.address,
+                    8,
+                    "ETH/USD"
+                )
             ).to.be.revertedWith("PriceOracle: invalid token address");
         });
 
-        it("Should not allow adding token with zero price feed", async function () {
-            const tokenAddress = ethers.Wallet.createRandom().address;
+        it("Should not allow adding price feed with zero address", async function () {
+            const token = ethers.Wallet.createRandom().address;
             
             await expect(
-                priceOracle.addToken(tokenAddress, ethers.constants.AddressZero, 18)
-            ).to.be.revertedWith("PriceOracle: invalid price feed");
+                priceOracle.addPriceFeed(
+                    token,
+                    ethers.constants.AddressZero,
+                    8,
+                    "ETH/USD"
+                )
+            ).to.be.revertedWith("PriceOracle: invalid price feed address");
         });
 
-        it("Should not allow adding duplicate tokens", async function () {
-            const tokenAddress = ethers.Wallet.createRandom().address;
+        it("Should not allow adding duplicate price feeds", async function () {
+            const token = ethers.Wallet.createRandom().address;
             
-            await priceOracle.addToken(tokenAddress, mockPriceFeed.address, 18);
+            // Add first time
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
+            
+            // Try to add again
+            await expect(
+                priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD")
+            ).to.be.revertedWith("PriceOracle: price feed already exists");
+        });
+
+        it("Should not allow non-owner to add price feeds", async function () {
+            const token = ethers.Wallet.createRandom().address;
             
             await expect(
-                priceOracle.addToken(tokenAddress, mockPriceFeed.address, 18)
-            ).to.be.revertedWith("PriceOracle: token already added");
+                priceOracle.connect(user).addPriceFeed(
+                    token,
+                    mockPriceFeed.address,
+                    8,
+                    "ETH/USD"
+                )
+            ).to.be.revertedWith("Ownable: caller is not the owner");
         });
 
-        it("Should allow owner to remove tokens", async function () {
-            const tokenAddress = ethers.Wallet.createRandom().address;
+        it("Should allow owner to update price feed", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            const newPriceFeed = ethers.Wallet.createRandom().address;
             
-            // First add token
-            await priceOracle.addToken(tokenAddress, mockPriceFeed.address, 18);
+            // Add initial price feed
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
             
-            // Then remove it
-            const tx = await priceOracle.removeToken(tokenAddress);
+            // Update it
+            const tx = await priceOracle.updatePriceFeed(token, newPriceFeed, 18, "ETH/USD Updated");
             const receipt = await tx.wait();
-            const event = receipt.events.find(e => e.event === 'TokenRemoved');
+            const event = receipt.events.find(e => e.event === 'PriceFeedUpdated');
             
-            expect(event.args.token).to.equal(tokenAddress);
+            expect(event.args.token).to.equal(token);
+            expect(event.args.newPriceFeed).to.equal(newPriceFeed);
             
-            const tokenInfo = await priceOracle.tokenInfo(tokenAddress);
-            expect(tokenInfo.isActive).to.be.false;
+            const feedInfo = await priceOracle.priceFeeds(token);
+            expect(feedInfo.priceFeed).to.equal(newPriceFeed);
+            expect(feedInfo.decimals).to.equal(18);
+        });
+
+        it("Should not allow updating non-existent price feed", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            
+            await expect(
+                priceOracle.updatePriceFeed(token, mockPriceFeed.address, 8, "ETH/USD")
+            ).to.be.revertedWith("PriceOracle: price feed not found");
+        });
+
+        it("Should allow owner to deactivate price feed", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            
+            // Add price feed
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
+            
+            // Deactivate it
+            const tx = await priceOracle.deactivatePriceFeed(token);
+            const receipt = await tx.wait();
+            const event = receipt.events.find(e => e.event === 'PriceFeedDeactivated');
+            
+            expect(event.args.token).to.equal(token);
+            
+            const feedInfo = await priceOracle.priceFeeds(token);
+            expect(feedInfo.isActive).to.be.false;
         });
     });
 
-    describe("Price Updates", function () {
-        let tokenAddress;
+    describe("Price Queries", function () {
+        let token;
 
         beforeEach(async function () {
-            tokenAddress = ethers.Wallet.createRandom().address;
-            await priceOracle.addToken(tokenAddress, mockPriceFeed.address, 18);
+            token = ethers.Wallet.createRandom().address;
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
         });
 
-        it("Should allow authorized oracles to update prices", async function () {
-            const price = ethers.utils.parseEther("100");
-            const confidence = 95;
+        it("Should return correct price for supported token", async function () {
+            // Set mock price (2000 USD with 8 decimals)
+            const mockPrice = ethers.utils.parseUnits("2000", 8);
+            await mockPriceFeed.setPrice(mockPrice);
             
-            const tx = await priceOracle.updatePrice(tokenAddress, price, confidence);
-            const receipt = await tx.wait();
-            const event = receipt.events.find(e => e.event === 'PriceUpdated');
+            const price = await priceOracle.getPrice(token);
+            expect(price).to.equal(mockPrice);
+        });
+
+        it("Should return price with correct decimals", async function () {
+            // Set mock price (2000 USD with 8 decimals)
+            const mockPrice = ethers.utils.parseUnits("2000", 8);
+            await mockPriceFeed.setPrice(mockPrice);
             
-            expect(event.args.token).to.equal(tokenAddress);
-            expect(event.args.price).to.equal(price);
-            
-            const priceData = await priceOracle.priceData(tokenAddress);
-            expect(priceData.price).to.equal(price);
-            expect(priceData.confidence).to.equal(confidence);
-            expect(priceData.isValid).to.be.true;
+            const price = await priceOracle.getPrice(token);
+            expect(price).to.equal(mockPrice);
         });
 
-        it("Should not allow unauthorized oracles to update prices", async function () {
-            await expect(
-                priceOracle.connect(addr1).updatePrice(tokenAddress, ethers.utils.parseEther("100"), 95)
-            ).to.be.revertedWith("PriceOracle: not authorized oracle");
-        });
-
-        it("Should not allow updating price for unsupported tokens", async function () {
-            const unsupportedToken = ethers.Wallet.createRandom().address;
-            
-            await expect(
-                priceOracle.updatePrice(unsupportedToken, ethers.utils.parseEther("100"), 95)
-            ).to.be.revertedWith("PriceOracle: token not supported");
-        });
-
-        it("Should not allow updating price with low confidence", async function () {
-            await expect(
-                priceOracle.updatePrice(tokenAddress, ethers.utils.parseEther("100"), 90)
-            ).to.be.revertedWith("PriceOracle: confidence too low");
-        });
-
-        it("Should not allow updating price with zero value", async function () {
-            await expect(
-                priceOracle.updatePrice(tokenAddress, 0, 95)
-            ).to.be.revertedWith("PriceOracle: invalid price");
-        });
-
-        it("Should check price deviation limits", async function () {
-            const initialPrice = ethers.utils.parseEther("100");
-            await priceOracle.updatePrice(tokenAddress, initialPrice, 95);
-            
-            // Try to update with high deviation
-            const highDeviationPrice = ethers.utils.parseEther("120"); // 20% increase
-            await expect(
-                priceOracle.updatePrice(tokenAddress, highDeviationPrice, 95)
-            ).to.be.revertedWith("PriceOracle: price deviation too high");
-        });
-    });
-
-    describe("Price Retrieval", function () {
-        let tokenAddress;
-
-        beforeEach(async function () {
-            tokenAddress = ethers.Wallet.createRandom().address;
-            await priceOracle.addToken(tokenAddress, mockPriceFeed.address, 18);
-            await priceOracle.updatePrice(tokenAddress, ethers.utils.parseEther("100"), 95);
-        });
-
-        it("Should return correct price", async function () {
-            const price = await priceOracle.getPrice(tokenAddress);
-            expect(price).to.equal(ethers.utils.parseEther("100"));
-        });
-
-        it("Should return price with confidence", async function () {
-            const [price, confidence] = await priceOracle.getPriceWithConfidence(tokenAddress);
-            expect(price).to.equal(ethers.utils.parseEther("100"));
-            expect(confidence).to.equal(95);
-        });
-
-        it("Should calculate token value correctly", async function () {
-            const amount = ethers.utils.parseEther("10");
-            const value = await priceOracle.getTokenValue(tokenAddress, amount);
-            expect(value).to.equal(ethers.utils.parseEther("1000")); // 10 * 100
-        });
-
-        it("Should not return price for unsupported tokens", async function () {
+        it("Should revert for unsupported token", async function () {
             const unsupportedToken = ethers.Wallet.createRandom().address;
             
             await expect(
                 priceOracle.getPrice(unsupportedToken)
-            ).to.be.revertedWith("PriceOracle: token not supported");
+            ).to.be.revertedWith("PriceOracle: price feed not found");
         });
 
-        it("Should not return expired prices", async function () {
-            // Fast forward time to expire price
-            await ethers.provider.send("evm_increaseTime", [3601]); // 1 hour + 1 second
-            await ethers.provider.send("evm_mine");
+        it("Should revert for deactivated price feed", async function () {
+            // Deactivate price feed
+            await priceOracle.deactivatePriceFeed(token);
             
             await expect(
-                priceOracle.getPrice(tokenAddress)
-            ).to.be.revertedWith("PriceOracle: price expired");
+                priceOracle.getPrice(token)
+            ).to.be.revertedWith("PriceOracle: price feed not active");
+        });
+
+        it("Should revert for stale price data", async function () {
+            // Set mock price with old timestamp
+            const mockPrice = ethers.utils.parseUnits("2000", 8);
+            const oldTimestamp = Math.floor(Date.now() / 1000) - 7200; // 2 hours ago
+            await mockPriceFeed.setPriceWithTimestamp(mockPrice, oldTimestamp);
+            
+            await expect(
+                priceOracle.getPrice(token)
+            ).to.be.revertedWith("PriceOracle: price data too old");
+        });
+
+        it("Should revert for zero price", async function () {
+            await mockPriceFeed.setPrice(0);
+            
+            await expect(
+                priceOracle.getPrice(token)
+            ).to.be.revertedWith("PriceOracle: invalid price");
+        });
+
+        it("Should revert for negative price", async function () {
+            // Set negative price (this would be invalid in real Chainlink)
+            const negativePrice = ethers.BigNumber.from("-1");
+            await mockPriceFeed.setPrice(negativePrice);
+            
+            await expect(
+                priceOracle.getPrice(token)
+            ).to.be.revertedWith("PriceOracle: invalid price");
         });
     });
 
-    describe("Oracle Management", function () {
-        it("Should allow owner to authorize oracles", async function () {
-            const tx = await priceOracle.authorizeOracle(addr1.address);
-            const receipt = await tx.wait();
-            const event = receipt.events.find(e => e.event === 'OracleAuthorized');
+    describe("Batch Price Queries", function () {
+        let token1, token2, token3;
+
+        beforeEach(async function () {
+            token1 = ethers.Wallet.createRandom().address;
+            token2 = ethers.Wallet.createRandom().address;
+            token3 = ethers.Wallet.createRandom().address;
             
-            expect(event.args.oracle).to.equal(addr1.address);
-            expect(await priceOracle.authorizedOracles(addr1.address)).to.be.true;
+            // Add multiple price feeds
+            await priceOracle.addPriceFeed(token1, mockPriceFeed.address, 8, "ETH/USD");
+            await priceOracle.addPriceFeed(token2, mockPriceFeed.address, 8, "BTC/USD");
+            await priceOracle.addPriceFeed(token3, mockPriceFeed.address, 8, "LINK/USD");
         });
 
-        it("Should allow owner to deauthorize oracles", async function () {
-            await priceOracle.authorizeOracle(addr1.address);
+        it("Should return prices for multiple tokens", async function () {
+            const tokens = [token1, token2, token3];
+            const mockPrice = ethers.utils.parseUnits("2000", 8);
+            await mockPriceFeed.setPrice(mockPrice);
             
-            const tx = await priceOracle.deauthorizeOracle(addr1.address);
-            const receipt = await tx.wait();
-            const event = receipt.events.find(e => e.event === 'OracleDeauthorized');
+            const prices = await priceOracle.getPrices(tokens);
             
-            expect(event.args.oracle).to.equal(addr1.address);
-            expect(await priceOracle.authorizedOracles(addr1.address)).to.be.false;
+            expect(prices.length).to.equal(3);
+            expect(prices[0]).to.equal(mockPrice);
+            expect(prices[1]).to.equal(mockPrice);
+            expect(prices[2]).to.equal(mockPrice);
         });
 
-        it("Should not allow non-owner to authorize oracles", async function () {
+        it("Should handle mixed valid and invalid tokens", async function () {
+            const validToken = token1;
+            const invalidToken = ethers.Wallet.createRandom().address;
+            const tokens = [validToken, invalidToken];
+            
+            const mockPrice = ethers.utils.parseUnits("2000", 8);
+            await mockPriceFeed.setPrice(mockPrice);
+            
             await expect(
-                priceOracle.connect(addr1).authorizeOracle(addr1.address)
-            ).to.be.revertedWith("Ownable: caller is not the owner");
+                priceOracle.getPrices(tokens)
+            ).to.be.revertedWith("PriceOracle: price feed not found");
+        });
+
+        it("Should return empty array for empty token list", async function () {
+            const prices = await priceOracle.getPrices([]);
+            expect(prices.length).to.equal(0);
+        });
+    });
+
+    describe("Price Conversion", function () {
+        let token;
+
+        beforeEach(async function () {
+            token = ethers.Wallet.createRandom().address;
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
+        });
+
+        it("Should convert price correctly", async function () {
+            const mockPrice = ethers.utils.parseUnits("2000", 8); // 2000 USD
+            await mockPriceFeed.setPrice(mockPrice);
+            
+            const amount = ethers.utils.parseEther("1"); // 1 ETH
+            const convertedAmount = await priceOracle.convertPrice(token, amount, 18);
+            
+            // 1 ETH * 2000 USD = 2000 USD (with 8 decimals)
+            const expectedAmount = ethers.utils.parseUnits("2000", 8);
+            expect(convertedAmount).to.equal(expectedAmount);
+        });
+
+        it("Should handle different decimal places", async function () {
+            const mockPrice = ethers.utils.parseUnits("2000", 8); // 2000 USD
+            await mockPriceFeed.setPrice(mockPrice);
+            
+            const amount = ethers.utils.parseUnits("1", 6); // 1 USDC (6 decimals)
+            const convertedAmount = await priceOracle.convertPrice(token, amount, 6);
+            
+            // 1 USDC * 2000 USD = 2000 USD (with 8 decimals)
+            const expectedAmount = ethers.utils.parseUnits("2000", 8);
+            expect(convertedAmount).to.equal(expectedAmount);
+        });
+
+        it("Should revert for zero amount", async function () {
+            await expect(
+                priceOracle.convertPrice(token, 0, 18)
+            ).to.be.revertedWith("PriceOracle: amount must be greater than 0");
         });
     });
 
     describe("Administrative Functions", function () {
-        it("Should allow owner to update update interval", async function () {
-            const newInterval = 600; // 10 minutes
-            await priceOracle.setUpdateInterval(newInterval);
+        it("Should allow owner to update price feed timeout", async function () {
+            const newTimeout = 7200; // 2 hours
             
-            expect(await priceOracle.updateInterval()).to.equal(newInterval);
+            const tx = await priceOracle.updatePriceFeedTimeout(newTimeout);
+            const receipt = await tx.wait();
+            const event = receipt.events.find(e => e.event === 'PriceFeedTimeoutUpdated');
+            
+            expect(event.args.newTimeout).to.equal(newTimeout);
+            expect(await priceOracle.priceFeedTimeout()).to.equal(newTimeout);
         });
 
-        it("Should not allow zero update interval", async function () {
+        it("Should not allow timeout less than 1 hour", async function () {
+            const newTimeout = 1800; // 30 minutes
+            
             await expect(
-                priceOracle.setUpdateInterval(0)
-            ).to.be.revertedWith("PriceOracle: invalid interval");
+                priceOracle.updatePriceFeedTimeout(newTimeout)
+            ).to.be.revertedWith("PriceOracle: timeout too short");
+        });
+
+        it("Should not allow non-owner to update timeout", async function () {
+            await expect(
+                priceOracle.connect(user).updatePriceFeedTimeout(7200)
+            ).to.be.revertedWith("Ownable: caller is not the owner");
         });
 
         it("Should allow owner to pause and unpause", async function () {
@@ -250,6 +343,106 @@ describe("PriceOracle", function () {
             
             await priceOracle.unpause();
             expect(await priceOracle.paused()).to.be.false;
+        });
+
+        it("Should not allow price queries when paused", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
+            
+            await priceOracle.pause();
+            
+            await expect(
+                priceOracle.getPrice(token)
+            ).to.be.revertedWith("Pausable: paused");
+        });
+    });
+
+    describe("Emergency Functions", function () {
+        let token;
+
+        beforeEach(async function () {
+            token = ethers.Wallet.createRandom().address;
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
+        });
+
+        it("Should allow owner to set emergency price", async function () {
+            const emergencyPrice = ethers.utils.parseUnits("1500", 8);
+            
+            const tx = await priceOracle.setEmergencyPrice(token, emergencyPrice);
+            const receipt = await tx.wait();
+            const event = receipt.events.find(e => e.event === 'EmergencyPriceSet');
+            
+            expect(event.args.token).to.equal(token);
+            expect(event.args.price).to.equal(emergencyPrice);
+            
+            const price = await priceOracle.getPrice(token);
+            expect(price).to.equal(emergencyPrice);
+        });
+
+        it("Should not allow non-owner to set emergency price", async function () {
+            const emergencyPrice = ethers.utils.parseUnits("1500", 8);
+            
+            await expect(
+                priceOracle.connect(user).setEmergencyPrice(token, emergencyPrice)
+            ).to.be.revertedWith("Ownable: caller is not the owner");
+        });
+
+        it("Should not allow zero emergency price", async function () {
+            await expect(
+                priceOracle.setEmergencyPrice(token, 0)
+            ).to.be.revertedWith("PriceOracle: invalid price");
+        });
+
+        it("Should allow owner to clear emergency price", async function () {
+            const emergencyPrice = ethers.utils.parseUnits("1500", 8);
+            await priceOracle.setEmergencyPrice(token, emergencyPrice);
+            
+            const tx = await priceOracle.clearEmergencyPrice(token);
+            const receipt = await tx.wait();
+            const event = receipt.events.find(e => e.event === 'EmergencyPriceCleared');
+            
+            expect(event.args.token).to.equal(token);
+        });
+    });
+
+    describe("Utility Functions", function () {
+        beforeEach(async function () {
+            // Add some price feeds
+            const token1 = ethers.Wallet.createRandom().address;
+            const token2 = ethers.Wallet.createRandom().address;
+            
+            await priceOracle.addPriceFeed(token1, mockPriceFeed.address, 8, "ETH/USD");
+            await priceOracle.addPriceFeed(token2, mockPriceFeed.address, 8, "BTC/USD");
+        });
+
+        it("Should return all supported tokens", async function () {
+            const supportedTokens = await priceOracle.getSupportedTokens();
+            expect(supportedTokens.length).to.equal(2);
+        });
+
+        it("Should return price feed info", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
+            
+            const feedInfo = await priceOracle.getPriceFeedInfo(token);
+            expect(feedInfo.priceFeed).to.equal(mockPriceFeed.address);
+            expect(feedInfo.decimals).to.equal(8);
+            expect(feedInfo.isActive).to.be.true;
+        });
+
+        it("Should return false for non-existent price feed", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            
+            const hasPriceFeed = await priceOracle.hasPriceFeed(token);
+            expect(hasPriceFeed).to.be.false;
+        });
+
+        it("Should return true for existing price feed", async function () {
+            const token = ethers.Wallet.createRandom().address;
+            await priceOracle.addPriceFeed(token, mockPriceFeed.address, 8, "ETH/USD");
+            
+            const hasPriceFeed = await priceOracle.hasPriceFeed(token);
+            expect(hasPriceFeed).to.be.true;
         });
     });
 });
