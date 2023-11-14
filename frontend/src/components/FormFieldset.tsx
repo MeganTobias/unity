@@ -1,40 +1,54 @@
 import React from 'react';
 
-interface FormFieldsetProps {
+interface FormFieldSetProps {
   children: React.ReactNode;
-  legend?: string;
+  title?: string;
   description?: string;
+  required?: boolean;
+  error?: string;
   disabled?: boolean;
-  variant?: 'default' | 'bordered' | 'card';
+  variant?: 'default' | 'bordered' | 'card' | 'outlined';
+  size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
 
-const FormFieldset: React.FC<FormFieldsetProps> = ({
+const FormFieldSet: React.FC<FormFieldSetProps> = ({
   children,
-  legend,
+  title,
   description,
+  required = false,
+  error,
   disabled = false,
   variant = 'default',
+  size = 'md',
   className = ''
 }) => {
+  const sizeClasses = {
+    sm: 'text-sm',
+    md: 'text-base',
+    lg: 'text-lg'
+  };
+
   const variantClasses = {
     default: '',
     bordered: 'border border-gray-200 rounded-lg p-4',
-    card: 'bg-white border border-gray-200 rounded-lg shadow-sm p-6'
+    card: 'bg-white border border-gray-200 rounded-lg shadow-sm p-6',
+    outlined: 'border-2 border-gray-300 rounded-lg p-4'
   };
 
   const disabledClasses = disabled ? 'opacity-50 pointer-events-none' : '';
 
   return (
     <fieldset className={`space-y-4 ${variantClasses[variant]} ${disabledClasses} ${className}`}>
-      {legend && (
-        <legend className="text-base font-medium text-gray-900 mb-2">
-          {legend}
+      {title && (
+        <legend className={`font-medium text-gray-900 ${sizeClasses[size]}`}>
+          {title}
+          {required && <span className="text-red-500 ml-1">*</span>}
         </legend>
       )}
       
       {description && (
-        <p className="text-sm text-gray-500 mb-4">
+        <p className={`text-gray-500 ${sizeClasses[size]}`}>
           {description}
         </p>
       )}
@@ -42,8 +56,14 @@ const FormFieldset: React.FC<FormFieldsetProps> = ({
       <div className="space-y-4">
         {children}
       </div>
+      
+      {error && (
+        <p className={`text-red-600 ${sizeClasses[size]}`}>
+          {error}
+        </p>
+      )}
     </fieldset>
   );
 };
 
-export default FormFieldset;
+export default FormFieldSet;

@@ -267,3 +267,4 @@ For technical support and questions:
 ---
 
 *This changelog follows the principles of [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and is automatically generated from our Git history and release notes.*
+

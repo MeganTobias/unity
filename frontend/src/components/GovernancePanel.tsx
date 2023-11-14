@@ -440,3 +440,4 @@ const GovernancePanel: React.FC<GovernancePanelProps> = ({ provider, userAddress
 };
 
 export default GovernancePanel;
+

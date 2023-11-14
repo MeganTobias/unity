@@ -74,3 +74,4 @@ const FormProgress: React.FC<FormProgressProps> = ({
 };
 
 export default FormProgress;
+

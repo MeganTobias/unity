@@ -461,3 +461,4 @@ module.exports = {
   validateProfileUpdate,
   validateNotificationPreferences
 };
+

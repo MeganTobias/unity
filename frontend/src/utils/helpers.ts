@@ -467,3 +467,4 @@ export function formatGasPrice(gasPrice: BigNumber): string {
     return '0';
   }
 }
+

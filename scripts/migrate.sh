@@ -587,3 +587,4 @@ fi
 
 # Run main function with all arguments
 main "$@"
+

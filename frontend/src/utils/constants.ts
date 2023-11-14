@@ -337,3 +337,4 @@ export const APP_METADATA = {
   FAVICON: '/favicon.ico',
   THEME_COLOR: '#3B82F6',
 };
+

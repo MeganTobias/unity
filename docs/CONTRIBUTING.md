@@ -678,3 +678,4 @@ Contributors are recognized in:
 Thank you for contributing to the DeFi Asset Management Platform! Your contributions help make DeFi more accessible and secure for everyone.
 
 *Last updated: February 2023*
+

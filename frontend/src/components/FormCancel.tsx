@@ -30,3 +30,4 @@ const FormCancel: React.FC<FormCancelProps> = ({
 };
 
 export default FormCancel;
+

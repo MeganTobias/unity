@@ -483,3 +483,4 @@ const Analytics: React.FC<AnalyticsProps> = ({ provider, userAddress }) => {
 };
 
 export default Analytics;
+

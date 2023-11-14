@@ -387,3 +387,4 @@ declare global {
     ethereum?: any;
   }
 }
+

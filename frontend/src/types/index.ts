@@ -1023,3 +1023,4 @@ export interface Store<S = AppState, A = AppAction> {
 
 export type Reducer<S = AppState, A = AppAction> = (state: S, action: A) => S;
 export type Middleware<S = AppState, A = AppAction> = (store: Store<S, A>) => (next: (action: A) => void) => (action: A) => void;
+

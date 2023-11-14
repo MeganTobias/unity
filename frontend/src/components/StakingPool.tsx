@@ -275,3 +275,4 @@ const StakingPool: React.FC<StakingPoolProps> = ({ provider, userAddress }) => {
 };
 
 export default StakingPool;
+
